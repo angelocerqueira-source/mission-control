@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --color-ink-950: #0f0f0e;
+  --color-ink-900: #1a1918;
+  --color-ink-800: #262523;
+  --color-ink-700: #3a3836;
+  --color-ink-600: #504d4a;
+  --color-ink-500: #6b6762;
+  --color-ink-400: #8a857f;
+  --color-ink-300: #b0aaa3;
+  --color-ink-200: #d4cfc8;
+  --color-ink-100: #eae7e2;
+  --color-ink-50: #f5f3f0;
+
+  --color-amber-glow: #e8a849;
+  --color-amber-dim: #c4893a;
+  --color-amber-muted: #8b6330;
+
+  --color-signal-green: #5cb85c;
+  --color-signal-red: #d9534f;
+  --color-signal-blue: #5bc0de;
+  --color-signal-purple: #a78bfa;
+  --color-signal-amber: #e8a849;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
+  background: var(--color-ink-950);
+  color: var(--color-ink-200);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Subtle grain overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(232, 168, 73, 0.3); }
+  50% { box-shadow: 0 0 8px 2px rgba(232, 168, 73, 0.5); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Hide scrollbar for kanban horizontal scroll on mobile */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe area padding for notch devices */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

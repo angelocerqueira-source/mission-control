@@ -8,6 +8,7 @@ export default defineSchema({
     status: v.union(v.literal("idle"), v.literal("active"), v.literal("blocked")),
     currentTaskId: v.optional(v.id("tasks")),
     sessionKey: v.string(),
+    lastActiveAt: v.optional(v.number()),
   }).index("by_sessionKey", ["sessionKey"]),
 
   tasks: defineTable({
@@ -54,6 +55,18 @@ export default defineSchema({
     taskId: v.optional(v.id("tasks")),
     createdAt: v.number(),
   }).index("by_taskId", ["taskId"]),
+
+  tokenUsage: defineTable({
+    agentId: v.id("agents"),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    totalTokens: v.number(),
+    runs: v.number(),
+    periodStart: v.number(),
+    periodEnd: v.number(),
+    collectedAt: v.number(),
+  }).index("by_agent", ["agentId"])
+    .index("by_collectedAt", ["collectedAt"]),
 
   notifications: defineTable({
     mentionedAgentId: v.id("agents"),

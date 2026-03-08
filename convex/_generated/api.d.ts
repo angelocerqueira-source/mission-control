@@ -13,7 +13,9 @@ import type * as agents from "../agents.js";
 import type * as documents from "../documents.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
+import type * as reset from "../reset.js";
 import type * as tasks from "../tasks.js";
+import type * as tokenUsage from "../tokenUsage.js";
 
 import type {
   ApiFromModules,
@@ -27,7 +29,9 @@ declare const fullApi: ApiFromModules<{
   documents: typeof documents;
   messages: typeof messages;
   notifications: typeof notifications;
+  reset: typeof reset;
   tasks: typeof tasks;
+  tokenUsage: typeof tokenUsage;
 }>;
 
 /**

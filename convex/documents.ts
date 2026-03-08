@@ -34,3 +34,12 @@ export const listByTask = query({
       .collect();
   },
 });
+
+export const list = query({
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("documents")
+      .order("desc")
+      .take(50);
+  },
+});

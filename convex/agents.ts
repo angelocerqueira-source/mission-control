@@ -53,3 +53,45 @@ export const getBySessionKey = query({
       .first();
   },
 });
+
+export const rename = mutation({
+  args: {
+    id: v.id("agents"),
+    name: v.string(),
+    role: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      name: args.name,
+      role: args.role,
+    });
+  },
+});
+
+export const heartbeat = mutation({
+  args: {
+    sessionKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_sessionKey", (q) => q.eq("sessionKey", args.sessionKey))
+      .first();
+    if (!agent) return null;
+
+    const now = Date.now();
+    await ctx.db.patch(agent._id, {
+      status: "active",
+      lastActiveAt: now,
+    });
+
+    await ctx.db.insert("activities", {
+      type: "agent_woke",
+      agentId: agent._id,
+      message: `${agent.name} heartbeat — online`,
+      createdAt: now,
+    });
+
+    return agent._id;
+  },
+});

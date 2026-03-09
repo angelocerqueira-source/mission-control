@@ -22,15 +22,53 @@ const PRIORITY_CONFIG: Record<string, { dot: string; label: string }> = {
   urgent: { dot: "bg-signal-red animate-pulse", label: "urg" },
 };
 
+type FilterState = {
+  search: string;
+  priority: string;
+  agentId: string;
+  deliverables: string;
+  period: string;
+};
+
+const PERIOD_OPTIONS = [
+  { key: "all", label: "Todas" },
+  { key: "7d", label: "7 dias" },
+  { key: "30d", label: "30 dias" },
+];
+
+function matchesFilters(
+  task: { _id: string; title: string; priority: string; assigneeIds: string[]; createdAt: number },
+  filters: FilterState,
+  taskIdsWithDocs: Set<string>,
+): boolean {
+  if (filters.search && !task.title.toLowerCase().includes(filters.search.toLowerCase())) return false;
+  if (filters.priority && task.priority !== filters.priority) return false;
+  if (filters.agentId && !task.assigneeIds.includes(filters.agentId)) return false;
+  if (filters.deliverables === "with" && !taskIdsWithDocs.has(task._id)) return false;
+  if (filters.deliverables === "without" && taskIdsWithDocs.has(task._id)) return false;
+  if (filters.period === "7d" && task.createdAt < Date.now() - 7 * 86400000) return false;
+  if (filters.period === "30d" && task.createdAt < Date.now() - 30 * 86400000) return false;
+  return true;
+}
+
 export function TaskBoard() {
   const tasks = useQuery(api.tasks.list);
   const agents = useQuery(api.agents.list);
+  const documents = useQuery(api.documents.list);
   const createTask = useMutation(api.tasks.create);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    search: "",
+    priority: "",
+    agentId: "",
+    deliverables: "",
+    period: "",
+  });
 
   if (!tasks || !agents) {
     return (
@@ -43,6 +81,9 @@ export function TaskBoard() {
   }
 
   const agentMap = new Map(agents.map((a) => [a._id, a.name]));
+  const taskIdsWithDocs = new Set((documents ?? []).map((d) => d.taskId).filter(Boolean) as string[]);
+  const activeFilterCount = [filters.search, filters.priority, filters.agentId, filters.deliverables, filters.period].filter(Boolean).length;
+  const filteredTasks = tasks.filter((t) => matchesFilters(t, filters, taskIdsWithDocs));
   const selectedTask = selectedTaskId
     ? tasks.find((t) => t._id === selectedTaskId) ?? null
     : null;
@@ -64,16 +105,125 @@ export function TaskBoard() {
             Task Board
           </h2>
           <span className="text-[10px] sm:text-xs font-mono text-ink-500 tracking-wider">
-            {tasks.length} tarefas
+            {filteredTasks.length}{filteredTasks.length !== tasks.length ? `/${tasks.length}` : ""} tarefas
           </span>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="text-[10px] sm:text-xs font-mono tracking-wider uppercase px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-glow/10 text-amber-glow border border-amber-glow/20 rounded-md hover:bg-amber-glow/20 hover:border-amber-glow/40 transition-all duration-200 flex-shrink-0"
-        >
-          + Nova Tarefa
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`text-[10px] sm:text-xs font-mono tracking-wider uppercase px-3 sm:px-4 py-1.5 sm:py-2 border rounded-md transition-all duration-200 flex-shrink-0 flex items-center gap-1.5 ${
+              activeFilterCount > 0
+                ? "bg-signal-blue/10 text-signal-blue border-signal-blue/30 hover:bg-signal-blue/20"
+                : "bg-ink-900/60 text-ink-400 border-ink-700/60 hover:text-ink-200 hover:border-ink-600"
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+              <path d="M1.5 3h9M3 6h6M4.5 9h3" />
+            </svg>
+            Filtros
+            {activeFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-signal-blue/20 text-signal-blue text-[9px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="text-[10px] sm:text-xs font-mono tracking-wider uppercase px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-glow/10 text-amber-glow border border-amber-glow/20 rounded-md hover:bg-amber-glow/20 hover:border-amber-glow/40 transition-all duration-200 flex-shrink-0"
+          >
+            + Nova Tarefa
+          </button>
+        </div>
       </div>
+
+      {/* Filter bar */}
+      {showFilters && (
+        <div className="mb-4 sm:mb-5 p-3 sm:p-4 border border-ink-800/50 rounded-lg bg-ink-900/40 animate-fade-in">
+          <div className="flex flex-wrap gap-2 sm:gap-3 items-end">
+            {/* Search */}
+            <div className="flex-1 min-w-[160px]">
+              <label className="text-[9px] font-mono text-ink-600 uppercase tracking-widest mb-1 block">Busca</label>
+              <input
+                type="text"
+                placeholder="Filtrar por título..."
+                value={filters.search}
+                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                className="w-full px-2.5 py-1.5 bg-ink-950 border border-ink-700/50 rounded text-[11px] sm:text-xs text-ink-200 placeholder:text-ink-600 focus:outline-none focus:border-amber-glow/30 transition-colors font-mono"
+              />
+            </div>
+
+            {/* Priority */}
+            <div>
+              <label className="text-[9px] font-mono text-ink-600 uppercase tracking-widest mb-1 block">Prioridade</label>
+              <select
+                value={filters.priority}
+                onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}
+                className="px-2.5 py-1.5 bg-ink-950 border border-ink-700/50 rounded text-[11px] sm:text-xs text-ink-200 focus:outline-none focus:border-amber-glow/30 transition-colors font-mono appearance-none pr-6 cursor-pointer"
+              >
+                <option value="">Todas</option>
+                <option value="urgent">Urgente</option>
+                <option value="high">Alta</option>
+                <option value="medium">Média</option>
+                <option value="low">Baixa</option>
+              </select>
+            </div>
+
+            {/* Agent */}
+            <div>
+              <label className="text-[9px] font-mono text-ink-600 uppercase tracking-widest mb-1 block">Agente</label>
+              <select
+                value={filters.agentId}
+                onChange={(e) => setFilters((f) => ({ ...f, agentId: e.target.value }))}
+                className="px-2.5 py-1.5 bg-ink-950 border border-ink-700/50 rounded text-[11px] sm:text-xs text-ink-200 focus:outline-none focus:border-amber-glow/30 transition-colors font-mono appearance-none pr-6 cursor-pointer"
+              >
+                <option value="">Todos</option>
+                {agents.map((a) => (
+                  <option key={a._id} value={a._id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Deliverables */}
+            <div>
+              <label className="text-[9px] font-mono text-ink-600 uppercase tracking-widest mb-1 block">Entregáveis</label>
+              <select
+                value={filters.deliverables}
+                onChange={(e) => setFilters((f) => ({ ...f, deliverables: e.target.value }))}
+                className="px-2.5 py-1.5 bg-ink-950 border border-ink-700/50 rounded text-[11px] sm:text-xs text-ink-200 focus:outline-none focus:border-amber-glow/30 transition-colors font-mono appearance-none pr-6 cursor-pointer"
+              >
+                <option value="">Todos</option>
+                <option value="with">Com entregáveis</option>
+                <option value="without">Sem entregáveis</option>
+              </select>
+            </div>
+
+            {/* Period */}
+            <div>
+              <label className="text-[9px] font-mono text-ink-600 uppercase tracking-widest mb-1 block">Período</label>
+              <select
+                value={filters.period}
+                onChange={(e) => setFilters((f) => ({ ...f, period: e.target.value }))}
+                className="px-2.5 py-1.5 bg-ink-950 border border-ink-700/50 rounded text-[11px] sm:text-xs text-ink-200 focus:outline-none focus:border-amber-glow/30 transition-colors font-mono appearance-none pr-6 cursor-pointer"
+              >
+                <option value="">Todas</option>
+                {PERIOD_OPTIONS.map((p) => (
+                  <option key={p.key} value={p.key === "all" ? "" : p.key}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear */}
+            {activeFilterCount > 0 && (
+              <button
+                onClick={() => setFilters({ search: "", priority: "", agentId: "", deliverables: "", period: "" })}
+                className="text-[10px] font-mono text-ink-500 hover:text-signal-red transition-colors px-2 py-1.5 self-end"
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form
@@ -135,7 +285,7 @@ export function TaskBoard() {
       {/* Kanban: horizontal scroll on mobile, grid on desktop */}
       <div className="flex lg:grid lg:grid-cols-6 gap-2 sm:gap-3 overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 snap-x snap-mandatory lg:snap-none">
         {COLUMNS.map((col) => {
-          const colTasks = tasks.filter((t) => t.status === col.key);
+          const colTasks = filteredTasks.filter((t) => t.status === col.key);
           return (
             <div
               key={col.key}

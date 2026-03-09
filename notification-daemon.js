@@ -1,6 +1,8 @@
 require("dotenv").config({ path: ".env.local" });
 const { ConvexHttpClient } = require("convex/browser");
 const { execSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 const { api } = require("./convex/_generated/api");
 
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -17,6 +19,25 @@ const POLL_INTERVAL_MS = 5000; // 5s (was 2s — reduces race conditions)
 const TASK_WATCH_INTERVAL_MS = 30000; // 30s — check for done/blocked tasks
 const STALE_AGENT_INTERVAL_MS = 300000; // 5min — check for inactive agents
 const STALE_THRESHOLD_MS = 3600000; // 1h — agent inactive threshold
+const TOKEN_SYNC_INTERVAL_MS = 300000; // 5min — sync token usage from OpenClaw sessions
+
+const OPENCLAW_AGENTS_DIR = "/Users/leticiacampos/.openclaw/agents";
+
+// Map openclaw agent ID → Convex agent ID
+const AGENT_CONVEX_MAP = {
+  main: "j97cbf1js2vgshsyw0ga3e1ag982f7z9",
+  "product-analyst": "j97e3ncpq46rnmgfdr656z2j6s82f9de",
+  "customer-researcher": "j97dqrdtvtg7rr1qyzsvhnqpbn82eaeq",
+  "seo-analyst": "j9789qbd4g691jqf4yzrbd9e4n82e4c0",
+  "content-writer": "j979re80945ghfjebbq15w4rhn82e0w0",
+  "social-media-manager": "j979a9yygvknpgcp5rbkexpas182e53t",
+  designer: "j972d3pm5ctrygc1dpg57sjzp582fshd",
+  "email-marketing": "j971vradzmas2f8p5trkjrvh5h82fc3t",
+  developer: "j97eerr3w8c6qqwq6w5psgtpjn82fptb",
+  "notion-agent": "j972jbevncx5qtcg1tctdck62s82ff5q",
+  babel: "j971vxe1wt459wvres1s20adpd82h8wg",
+  banker: "j977hgbfz03tnxeb8h590b7t1h82hebr",
+};
 
 const AGENT_SESSION_MAP = {
   main: "agent:main:main",
@@ -227,12 +248,83 @@ async function checkStaleAgents() {
   }
 }
 
+// --- Feature 4: Token usage sync from OpenClaw sessions ---
+
+async function syncTokenUsage() {
+  try {
+    const now = Date.now();
+    let synced = 0;
+
+    for (const [agentCliId, convexId] of Object.entries(AGENT_CONVEX_MAP)) {
+      const sessionFile = path.join(
+        OPENCLAW_AGENTS_DIR,
+        agentCliId,
+        "sessions",
+        "sessions.json"
+      );
+
+      if (!fs.existsSync(sessionFile)) continue;
+
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+      } catch {
+        continue;
+      }
+
+      let totalIn = 0;
+      let totalOut = 0;
+      let totalTok = 0;
+      let runs = 0;
+      let earliest = now;
+      let latest = 0;
+
+      for (const [, session] of Object.entries(data)) {
+        if (
+          typeof session !== "object" ||
+          session === null ||
+          !("inputTokens" in session)
+        )
+          continue;
+        totalIn += session.inputTokens || 0;
+        totalOut += session.outputTokens || 0;
+        totalTok += session.totalTokens || 0;
+        runs++;
+        const updated = session.updatedAt || 0;
+        if (typeof updated === "number" && updated > 0) {
+          const ts = updated < 1e12 ? updated * 1000 : updated;
+          earliest = Math.min(earliest, ts);
+          latest = Math.max(latest, ts);
+        }
+      }
+
+      if (runs === 0) continue;
+
+      await client.mutation(api.tokenUsage.record, {
+        agentId: convexId,
+        inputTokens: totalIn,
+        outputTokens: totalOut,
+        totalTokens: totalTok,
+        runs,
+        periodStart: earliest < now ? earliest : now,
+        periodEnd: latest > 0 ? latest : now,
+      });
+      synced++;
+    }
+
+    console.log(`[TOKENS] Synced ${synced} agents`);
+  } catch (err) {
+    console.error("[ERROR] Token sync failed:", err.message);
+  }
+}
+
 // --- Start ---
 
 console.log("[START] Notification daemon running...");
 console.log(`[CONFIG] Notification poll: ${POLL_INTERVAL_MS}ms`);
 console.log(`[CONFIG] Task watcher: ${TASK_WATCH_INTERVAL_MS}ms`);
 console.log(`[CONFIG] Stale agent check: ${STALE_AGENT_INTERVAL_MS}ms`);
+console.log(`[CONFIG] Token sync: ${TOKEN_SYNC_INTERVAL_MS}ms`);
 console.log(`[CONFIG] Telegram target: ${TELEGRAM_CHAT_ID}`);
 console.log(`[CONFIG] Convex URL: ${CONVEX_URL}`);
 
@@ -241,6 +333,12 @@ watchTaskStatuses().then(() => {
   console.log("[INIT] Task statuses seeded");
 });
 
+// Initial token sync
+syncTokenUsage().then(() => {
+  console.log("[INIT] Token usage synced");
+});
+
 setInterval(deliverNotifications, POLL_INTERVAL_MS);
 setInterval(watchTaskStatuses, TASK_WATCH_INTERVAL_MS);
 setInterval(checkStaleAgents, STALE_AGENT_INTERVAL_MS);
+setInterval(syncTokenUsage, TOKEN_SYNC_INTERVAL_MS);

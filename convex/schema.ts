@@ -11,6 +11,12 @@ export default defineSchema({
     lastActiveAt: v.optional(v.number()),
   }).index("by_sessionKey", ["sessionKey"]),
 
+  projects: defineTable({
+    name: v.string(),
+    color: v.string(),
+    createdAt: v.number(),
+  }).index("by_name", ["name"]),
+
   tasks: defineTable({
     title: v.string(),
     description: v.string(),
@@ -24,8 +30,10 @@ export default defineSchema({
     ),
     assigneeIds: v.array(v.id("agents")),
     priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
+    projectId: v.optional(v.id("projects")),
     createdAt: v.number(),
-  }).index("by_status", ["status"]),
+  }).index("by_status", ["status"])
+    .index("by_projectId", ["projectId"]),
 
   messages: defineTable({
     taskId: v.id("tasks"),

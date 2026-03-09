@@ -18,6 +18,7 @@ interface Task {
   status: string;
   priority: string;
   assigneeIds: Id<"agents">[];
+  projectId?: Id<"projects">;
   createdAt: number;
 }
 
@@ -25,6 +26,7 @@ interface TaskDetailSheetProps {
   task: Task | null;
   onClose: () => void;
   agentMap: Map<string, string>;
+  projectMap?: Map<string, { name: string; color: string }>;
 }
 
 type SheetTab = "detalhes" | "entregaveis" | "atividade";
@@ -101,10 +103,20 @@ const TABS: { id: SheetTab; label: string }[] = [
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
+const PROJECT_COLORS: Record<string, string> = {
+  blue: "bg-signal-blue",
+  green: "bg-signal-green",
+  amber: "bg-signal-amber",
+  purple: "bg-signal-purple",
+  red: "bg-signal-red",
+  cyan: "bg-signal-blue/60",
+};
+
 export function TaskDetailSheet({
   task,
   onClose,
   agentMap,
+  projectMap,
 }: TaskDetailSheetProps) {
   const [activeTab, setActiveTab] = useState<SheetTab>("detalhes");
 
@@ -230,6 +242,7 @@ export function TaskDetailSheet({
                 status={status}
                 priority={priority}
                 assigneeNames={assigneeNames}
+                project={task.projectId && projectMap ? projectMap.get(task.projectId) : undefined}
               />
             )}
             {activeTab === "entregaveis" && (
@@ -277,11 +290,13 @@ function DetailsTab({
   status,
   priority,
   assigneeNames,
+  project,
 }: {
   task: Task;
   status: (typeof STATUS_CONFIG)[string];
   priority: (typeof PRIORITY_CONFIG)[string];
   assigneeNames: string[];
+  project?: { name: string; color: string };
 }) {
   return (
     <div className="space-y-5 animate-fade-in">
@@ -327,6 +342,16 @@ function DetailsTab({
               minute: "2-digit",
             })}
           </span>
+        </MetaField>
+        <MetaField label="Projeto">
+          {project ? (
+            <span className="inline-flex items-center gap-1.5 text-ink-200">
+              <span className={`w-2 h-2 rounded-full ${PROJECT_COLORS[project.color] ?? "bg-ink-500"}`} />
+              {project.name}
+            </span>
+          ) : (
+            <span className="text-ink-600">Nenhum</span>
+          )}
         </MetaField>
       </div>
 

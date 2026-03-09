@@ -6,6 +6,7 @@ export const create = mutation({
     title: v.string(),
     description: v.string(),
     priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
+    projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
     const taskId = await ctx.db.insert("tasks", {
@@ -14,6 +15,7 @@ export const create = mutation({
       status: "inbox",
       assigneeIds: [],
       priority: args.priority,
+      ...(args.projectId ? { projectId: args.projectId } : {}),
       createdAt: Date.now(),
     });
     await ctx.db.insert("activities", {
@@ -41,6 +43,7 @@ export const update = mutation({
       )
     ),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
+    projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -80,6 +83,15 @@ export const assign = mutation({
 export const list = query({
   handler: async (ctx) => {
     return await ctx.db.query("tasks").collect();
+  },
+});
+
+export const unsetProject = mutation({
+  args: {
+    id: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { projectId: undefined });
   },
 });
 

@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
+import { MarkdownProse } from "./markdown-prose";
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string; bg: string; label: string }> = {
   deliverable: { icon: "▸", color: "text-amber-glow", bg: "bg-amber-glow/10", label: "deliverable" },
@@ -114,10 +115,8 @@ export function DocumentPanel() {
               {isExpanded && (
                 <div className="px-3 sm:px-4 pb-3 sm:pb-4">
                   <div className="ml-7 sm:ml-9 pl-3 sm:pl-4 border-l-2 border-ink-800/60">
-                    <div className="bg-ink-950/60 rounded-md p-3 sm:p-4 overflow-x-auto">
-                      <pre className="text-[11px] sm:text-xs font-mono text-ink-300 leading-relaxed whitespace-pre-wrap break-words">
-                        {doc.content}
-                      </pre>
+                    <div className="bg-ink-950/60 rounded-md p-3 sm:p-4 overflow-x-auto max-h-[400px] overflow-y-auto overscroll-contain">
+                      <MarkdownProse content={doc.content} />
                     </div>
                     <div className="flex items-center gap-3 mt-2 text-[9px] sm:text-[10px] font-mono text-ink-700">
                       <span>{doc.content.length} chars</span>

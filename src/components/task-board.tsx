@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { Id } from "../../convex/_generated/dataModel";
+import { TaskDetailSheet } from "./task-detail-sheet";
 
 const COLUMNS = [
   { key: "inbox", label: "Inbox", accent: "bg-ink-500" },
@@ -29,6 +30,7 @@ export function TaskBoard() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
+  const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
 
   if (!tasks || !agents) {
     return (
@@ -41,6 +43,9 @@ export function TaskBoard() {
   }
 
   const agentMap = new Map(agents.map((a) => [a._id, a.name]));
+  const selectedTask = selectedTaskId
+    ? tasks.find((t) => t._id === selectedTaskId) ?? null
+    : null;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -157,6 +162,7 @@ export function TaskBoard() {
                       .map((id: Id<"agents">) => agentMap.get(id) ?? "?")
                       .join(", ")}
                     index={i}
+                    onSelect={() => setSelectedTaskId(task._id)}
                   />
                 ))}
               </div>
@@ -171,6 +177,13 @@ export function TaskBoard() {
           <span key={col.key} className={`w-1 h-1 rounded-full ${col.accent} opacity-40`} />
         ))}
       </div>
+
+      {/* Task detail sheet */}
+      <TaskDetailSheet
+        task={selectedTask}
+        onClose={() => setSelectedTaskId(null)}
+        agentMap={agentMap}
+      />
     </div>
   );
 }
@@ -179,39 +192,41 @@ function TaskCard({
   task,
   assignees,
   index,
+  onSelect,
 }: {
   task: { _id: string; title: string; priority: string; description: string };
   assignees: string;
   index: number;
+  onSelect: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const prioConfig = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
 
   return (
     <div
-      className="bg-ink-900/60 border border-ink-800/50 rounded-md p-2 sm:p-2.5 cursor-pointer hover:border-ink-600/60 hover:bg-ink-800/40 transition-all duration-200 animate-fade-in"
+      className="bg-ink-900/60 border border-ink-800/50 rounded-md p-2 sm:p-2.5 cursor-pointer hover:border-ink-600/60 hover:bg-ink-800/40 transition-all duration-200 animate-fade-in group"
       style={{ animationDelay: `${index * 40}ms` }}
-      onClick={() => setExpanded(!expanded)}
+      onClick={onSelect}
     >
       <div className="flex items-start gap-2">
         <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${prioConfig.dot}`} />
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] sm:text-xs font-medium text-ink-200 leading-snug">{task.title}</p>
+          <p className="text-[11px] sm:text-xs font-medium text-ink-200 leading-snug group-hover:text-ink-50 transition-colors">{task.title}</p>
           {assignees && (
             <p className="text-[10px] font-mono text-ink-600 mt-1 truncate">{assignees}</p>
           )}
         </div>
+        {/* Open icon hint */}
+        <span className="text-ink-700 group-hover:text-ink-500 transition-colors mt-0.5 flex-shrink-0">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+            <path d="M4.5 2.5L8 6L4.5 9.5" />
+          </svg>
+        </span>
       </div>
       <div className="flex items-center justify-between mt-1.5 sm:mt-2">
         <span className="text-[9px] font-mono uppercase tracking-widest text-ink-600">
           {prioConfig.label}
         </span>
       </div>
-      {expanded && task.description && (
-        <p className="text-[11px] text-ink-400 mt-2 pt-2 border-t border-ink-800/50 leading-relaxed">
-          {task.description}
-        </p>
-      )}
     </div>
   );
 }

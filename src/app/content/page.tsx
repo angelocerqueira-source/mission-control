@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 
-type Tab = "pipeline" | "history" | "metrics";
+type Tab = "hoje" | "pipeline" | "history" | "ideias" | "metrics";
 
 const TABS: { id: Tab; label: string; shortcut: string }[] = [
-  { id: "pipeline", label: "Pipeline", shortcut: "1" },
-  { id: "history", label: "Historico", shortcut: "2" },
-  { id: "metrics", label: "Metricas", shortcut: "3" },
+  { id: "hoje", label: "Hoje", shortcut: "1" },
+  { id: "pipeline", label: "Pipeline", shortcut: "2" },
+  { id: "history", label: "Historico", shortcut: "3" },
+  { id: "ideias", label: "Ideias", shortcut: "4" },
+  { id: "metrics", label: "Metricas", shortcut: "5" },
 ];
 
 type Deliverable = {
@@ -18,6 +21,8 @@ type Deliverable = {
   fileType: string;
   content?: string;
   filePath?: string;
+  variant?: "technical" | "storytelling" | "provocative";
+  chosen?: boolean;
 };
 
 type TokenUsageDetail = {
@@ -28,7 +33,7 @@ type TokenUsageDetail = {
 };
 
 type ContentRun = {
-  _id: string;
+  _id: Id<"contentRuns">;
   tema: string;
   slug: string;
   status: "researching" | "generating" | "adapting" | "review" | "published" | "failed";
@@ -37,6 +42,7 @@ type ContentRun = {
   sourcesImported?: number;
   formats: string[];
   platforms: string[];
+  productIdeaId?: Id<"productIdeas">;
   notebookId?: string;
   outputDir?: string;
   timings?: {
@@ -51,6 +57,26 @@ type ContentRun = {
   tokenUsage?: TokenUsageDetail;
   createdAt: number;
   completedAt?: number;
+};
+
+type TrendSource = {
+  platform: string;
+  url: string;
+  title: string;
+};
+
+type ProductIdea = {
+  _id: Id<"productIdeas">;
+  date: number;
+  name: string;
+  problem: string;
+  targetAudience: string;
+  mvpScope: string;
+  suggestedStack: string;
+  trendSources: TrendSource[];
+  contentRunId?: Id<"contentRuns">;
+  status: "new" | "building" | "built" | "skipped";
+  createdAt: number;
 };
 
 const STATUS_CONFIG: Record<
@@ -101,6 +127,47 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const IDEA_STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string; bg: string; border: string; icon: string }
+> = {
+  new: {
+    label: "Nova",
+    color: "text-signal-blue",
+    bg: "bg-signal-blue/10",
+    border: "border-signal-blue/30",
+    icon: "◎",
+  },
+  building: {
+    label: "Construindo",
+    color: "text-amber-glow",
+    bg: "bg-amber-glow/10",
+    border: "border-amber-glow/30",
+    icon: "◉",
+  },
+  built: {
+    label: "Construida",
+    color: "text-signal-green",
+    bg: "bg-signal-green/10",
+    border: "border-signal-green/30",
+    icon: "●",
+  },
+  skipped: {
+    label: "Pulada",
+    color: "text-ink-500",
+    bg: "bg-ink-800/20",
+    border: "border-ink-700/30",
+    icon: "○",
+  },
+};
+
+const IDEA_STATUS_CYCLE: Array<"new" | "building" | "built" | "skipped"> = [
+  "new",
+  "building",
+  "built",
+  "skipped",
+];
+
 const PIPELINE_STAGES = [
   "researching",
   "generating",
@@ -116,9 +183,34 @@ const PLATFORM_LABELS: Record<string, { short: string; color: string }> = {
   tiktok: { short: "TK", color: "text-ink-300" },
 };
 
+const VARIANT_LABELS: Record<string, string> = {
+  technical: "Tecnica",
+  storytelling: "Storytelling",
+  provocative: "Provocativa",
+};
+
+const VARIANT_ORDER: Array<"technical" | "storytelling" | "provocative"> = [
+  "technical",
+  "storytelling",
+  "provocative",
+];
+
 export default function ContentStudio() {
-  const [activeTab, setActiveTab] = useState<Tab>("pipeline");
+  const [activeTab, setActiveTab] = useState<Tab>("hoje");
   const contentRuns = useQuery(api.contentRuns.list);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const idx = parseInt(e.key) - 1;
+      if (idx >= 0 && idx < TABS.length) {
+        setActiveTab(TABS[idx].id);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
   return (
     <div className="min-h-screen min-h-dvh flex flex-col">
@@ -195,11 +287,17 @@ export default function ContentStudio() {
       {/* Content */}
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="animate-fade-in" key={activeTab}>
+          {activeTab === "hoje" && (
+            <HojeView runs={contentRuns ?? []} />
+          )}
           {activeTab === "pipeline" && (
             <PipelineView runs={contentRuns ?? []} />
           )}
           {activeTab === "history" && (
             <HistoryView runs={contentRuns ?? []} />
+          )}
+          {activeTab === "ideias" && (
+            <IdeiasView />
           )}
           {activeTab === "metrics" && (
             <MetricsView runs={contentRuns ?? []} />
@@ -218,6 +316,271 @@ export default function ContentStudio() {
           </span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/* ── Hoje View ── */
+
+function HojeView({ runs }: { runs: ContentRun[] }) {
+  const todayIdea = useQuery(api.productIdeas.getToday);
+  const updateStatus = useMutation(api.productIdeas.updateStatus);
+  const chooseVariant = useMutation(api.contentRuns.chooseVariant);
+
+  // Find today's content run linked to the idea
+  const todayRun = todayIdea
+    ? runs.find((r) => r.productIdeaId === todayIdea._id)
+    : undefined;
+
+  // Get deliverables with variants grouped by platform
+  const deliverablesByPlatform: Record<string, Deliverable[]> = {};
+  if (todayRun?.deliverables) {
+    for (const d of todayRun.deliverables) {
+      if (d.variant) {
+        if (!deliverablesByPlatform[d.platform]) {
+          deliverablesByPlatform[d.platform] = [];
+        }
+        deliverablesByPlatform[d.platform].push(d);
+      }
+    }
+  }
+
+  const hasVariants = Object.keys(deliverablesByPlatform).length > 0;
+
+  const handleCycleStatus = useCallback(async () => {
+    if (!todayIdea) return;
+    const currentIndex = IDEA_STATUS_CYCLE.indexOf(todayIdea.status);
+    const nextStatus = IDEA_STATUS_CYCLE[(currentIndex + 1) % IDEA_STATUS_CYCLE.length];
+    await updateStatus({ id: todayIdea._id, status: nextStatus });
+  }, [todayIdea, updateStatus]);
+
+  const handleChooseVariant = useCallback(
+    async (platform: string, variant: string) => {
+      if (!todayRun) return;
+      await chooseVariant({ id: todayRun._id, platform, variant });
+    },
+    [todayRun, chooseVariant]
+  );
+
+  return (
+    <div className="space-y-6 sm:space-y-8">
+      {/* Product Idea Card */}
+      {todayIdea ? (
+        <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/5 p-5 sm:p-7 animate-fade-in">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-mono text-amber-glow/60 tracking-wider uppercase mb-1.5">
+                Ideia do dia
+              </p>
+              <h2 className="text-xl sm:text-2xl font-[family-name:var(--font-display)] font-bold text-ink-50 tracking-tight">
+                {todayIdea.name}
+              </h2>
+            </div>
+            <button
+              onClick={handleCycleStatus}
+              className={`text-[10px] font-mono ${IDEA_STATUS_CONFIG[todayIdea.status].color} ${IDEA_STATUS_CONFIG[todayIdea.status].bg} border ${IDEA_STATUS_CONFIG[todayIdea.status].border} px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity`}
+              title="Clique para mudar status"
+            >
+              {IDEA_STATUS_CONFIG[todayIdea.status].icon}{" "}
+              {IDEA_STATUS_CONFIG[todayIdea.status].label}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                Problema
+              </p>
+              <p className="text-sm text-ink-200 leading-relaxed">
+                {todayIdea.problem}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                Publico-alvo
+              </p>
+              <p className="text-sm text-ink-200 leading-relaxed">
+                {todayIdea.targetAudience}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                Escopo MVP
+              </p>
+              <p className="text-sm text-ink-200 leading-relaxed font-[family-name:var(--font-mono)] text-[12px]">
+                {todayIdea.mvpScope}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                Stack sugerida
+              </p>
+              <p className="text-sm text-ink-200 leading-relaxed font-[family-name:var(--font-mono)] text-[12px]">
+                {todayIdea.suggestedStack}
+              </p>
+            </div>
+          </div>
+
+          {/* Trend sources */}
+          {todayIdea.trendSources.length > 0 && (
+            <div>
+              <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-2">
+                Fontes de tendencia
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {todayIdea.trendSources.map((src, i) => (
+                  <a
+                    key={i}
+                    href={src.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full bg-ink-900/60 border border-ink-800/40 text-ink-300 hover:text-amber-glow hover:border-amber-glow/30 transition-colors"
+                    title={src.title}
+                  >
+                    <span className="text-amber-glow/70">{src.platform}</span>
+                    <span className="text-ink-600">·</span>
+                    <span className="truncate max-w-[120px]">{src.title}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-ink-900/40 border border-ink-800/60 rounded-lg p-8 sm:p-12 text-center">
+          <p className="text-ink-600 font-mono text-sm mb-2">
+            Nenhuma ideia de produto para hoje
+          </p>
+          <p className="text-ink-700 font-mono text-xs">
+            O proximo briefing sera as 8h
+          </p>
+        </div>
+      )}
+
+      {/* Variations Picker */}
+      {hasVariants && todayRun ? (
+        <div>
+          <SectionLabel text="Variacoes de conteudo" />
+          <div className="space-y-4">
+            {Object.entries(deliverablesByPlatform).map(([platform, deliverables]) => (
+              <PlatformVariantPicker
+                key={platform}
+                platform={platform}
+                deliverables={deliverables}
+                runId={todayRun._id}
+                onChoose={handleChooseVariant}
+              />
+            ))}
+          </div>
+        </div>
+      ) : todayIdea ? (
+        <div className="bg-ink-900/40 border border-ink-800/60 rounded-lg p-8 sm:p-12 text-center">
+          <p className="text-ink-600 font-mono text-sm mb-2">
+            Nenhum conteudo gerado hoje
+          </p>
+          <p className="text-ink-700 font-mono text-xs">
+            O proximo briefing sera as 8h
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PlatformVariantPicker({
+  platform,
+  deliverables,
+  runId,
+  onChoose,
+}: {
+  platform: string;
+  deliverables: Deliverable[];
+  runId: Id<"contentRuns">;
+  onChoose: (platform: string, variant: string) => Promise<void>;
+}) {
+  const [activeVariant, setActiveVariant] = useState<string>(
+    VARIANT_ORDER.find((v) => deliverables.some((d) => d.variant === v)) ?? "technical"
+  );
+  const pl = PLATFORM_LABELS[platform];
+
+  // Find the available variants for this platform
+  const availableVariants = VARIANT_ORDER.filter((v) =>
+    deliverables.some((d) => d.variant === v)
+  );
+
+  const currentDeliverable = deliverables.find((d) => d.variant === activeVariant);
+  const chosenVariant = deliverables.find((d) => d.chosen);
+
+  return (
+    <div className="rounded-xl border border-ink-800/60 bg-ink-900/40 overflow-hidden">
+      {/* Platform header with variant tabs */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-ink-800/40">
+        <span className={`text-xs font-mono font-semibold ${pl?.color ?? "text-ink-400"}`}>
+          {pl?.short ?? platform}
+        </span>
+        <div className="flex gap-0 ml-2">
+          {availableVariants.map((v) => {
+            const isActive = activeVariant === v;
+            const isChosen = chosenVariant?.variant === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setActiveVariant(v)}
+                className={`px-3 py-1.5 text-[10px] font-mono tracking-wider uppercase transition-colors cursor-pointer border-b-2 -mb-[1px] ${
+                  isActive
+                    ? "text-signal-purple border-signal-purple"
+                    : isChosen
+                      ? "text-signal-green border-transparent"
+                      : "text-ink-500 border-transparent hover:text-ink-300"
+                }`}
+              >
+                {isChosen && "● "}
+                {VARIANT_LABELS[v] ?? v}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Content */}
+      {currentDeliverable && (
+        <div className="p-4">
+          <div
+            className={`rounded-lg bg-ink-950/60 border p-4 max-h-[300px] overflow-y-auto ${
+              currentDeliverable.chosen
+                ? "border-signal-green/40"
+                : "border-ink-800/40"
+            }`}
+          >
+            <pre className="text-[11px] text-ink-300 whitespace-pre-wrap font-[family-name:var(--font-mono)] leading-relaxed">
+              {currentDeliverable.content ?? "Sem conteudo"}
+            </pre>
+          </div>
+
+          <div className="flex items-center justify-between mt-3">
+            {currentDeliverable.chosen ? (
+              <span className="text-[10px] font-mono text-signal-green flex items-center gap-1.5">
+                ● Variacao escolhida
+              </span>
+            ) : (
+              <button
+                onClick={() => onChoose(platform, activeVariant)}
+                className="text-[10px] font-mono text-signal-purple hover:text-signal-purple/80 bg-signal-purple/10 border border-signal-purple/30 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                Escolher esta
+              </button>
+            )}
+            {currentDeliverable.filePath && (
+              <span className="text-[9px] font-mono text-ink-700 truncate max-w-[200px]">
+                {currentDeliverable.filePath.split("/").slice(-2).join("/")}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -338,9 +701,16 @@ function HistoryView({ runs }: { runs: ContentRun[] }) {
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-ink-200 truncate group-hover:text-ink-100 transition-colors">
-                        {run.tema}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-ink-200 truncate group-hover:text-ink-100 transition-colors">
+                          {run.tema}
+                        </p>
+                        {run.productIdeaId && (
+                          <span className="text-[9px] font-mono text-amber-glow/70 bg-amber-glow/10 border border-amber-glow/20 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                            Ideia vinculada
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className={`text-[10px] font-mono ${config.color}`}>
                           {config.label}
@@ -379,6 +749,188 @@ function HistoryView({ runs }: { runs: ContentRun[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ── Ideias View ── */
+
+function IdeiasView() {
+  const ideas = useQuery(api.productIdeas.list);
+  const [filter, setFilter] = useState<"all" | "new" | "building" | "built" | "skipped">("all");
+  const [expandedId, setExpandedId] = useState<Id<"productIdeas"> | null>(null);
+
+  if (!ideas) {
+    return (
+      <div className="bg-ink-900/40 border border-ink-800/60 rounded-lg p-8 sm:p-12 text-center">
+        <p className="text-ink-600 font-mono text-sm">Carregando ideias...</p>
+      </div>
+    );
+  }
+
+  const totalCount = ideas.length;
+  const builtCount = ideas.filter((i) => i.status === "built").length;
+  const conversionRate = totalCount > 0 ? ((builtCount / totalCount) * 100).toFixed(1) : "0";
+
+  const filtered = filter === "all" ? ideas : ideas.filter((i) => i.status === filter);
+
+  const filters: Array<{ id: typeof filter; label: string }> = [
+    { id: "all", label: "Todas" },
+    { id: "new", label: "Novas" },
+    { id: "building", label: "Construindo" },
+    { id: "built", label: "Construidas" },
+    { id: "skipped", label: "Puladas" },
+  ];
+
+  return (
+    <div className="space-y-6 sm:space-y-8">
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <MetricCard label="Total ideias" value={`${totalCount}`} accent="purple" />
+        <MetricCard label="Construidas" value={`${builtCount}`} accent="green" />
+        <MetricCard label="Conversao" value={`${conversionRate}%`} accent="amber" />
+      </div>
+
+      {/* Filter buttons */}
+      <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`text-[10px] font-mono tracking-wider uppercase px-3 py-1.5 rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
+              filter === f.id
+                ? "text-signal-purple bg-signal-purple/10 border-signal-purple/30"
+                : "text-ink-500 bg-ink-900/40 border-ink-800/40 hover:text-ink-300 hover:border-ink-700"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Ideas list */}
+      {filtered.length > 0 ? (
+        <div className="space-y-2">
+          {filtered.map((idea, i) => {
+            const isExpanded = expandedId === idea._id;
+            const statusConf = IDEA_STATUS_CONFIG[idea.status];
+            return (
+              <div
+                key={idea._id}
+                className={`rounded-xl border ${statusConf.border} ${statusConf.bg} animate-fade-in overflow-hidden`}
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
+                {/* Summary row */}
+                <button
+                  onClick={() => setExpandedId(isExpanded ? null : idea._id)}
+                  className="w-full flex items-center gap-3 p-4 sm:p-5 text-left cursor-pointer"
+                >
+                  <span className={`text-xs ${statusConf.color} flex-shrink-0`}>
+                    {statusConf.icon}
+                  </span>
+                  <time className="text-[10px] font-mono text-ink-600 flex-shrink-0">
+                    {new Date(idea.date).toLocaleDateString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                    })}
+                  </time>
+                  <span className="text-sm text-ink-200 font-semibold truncate flex-1 min-w-0">
+                    {idea.name}
+                  </span>
+                  <span className="text-[11px] text-ink-400 truncate max-w-[200px] hidden sm:block">
+                    {idea.problem.length > 60
+                      ? idea.problem.slice(0, 60) + "..."
+                      : idea.problem}
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono ${statusConf.color} ${statusConf.bg} border ${statusConf.border} px-2 py-0.5 rounded-full flex-shrink-0`}
+                  >
+                    {statusConf.label}
+                  </span>
+                  <span
+                    className={`text-[10px] text-ink-600 transition-transform duration-200 flex-shrink-0 ${
+                      isExpanded ? "rotate-90" : ""
+                    }`}
+                  >
+                    ▸
+                  </span>
+                </button>
+
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-ink-800/30 animate-fade-in">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                          Problema
+                        </p>
+                        <p className="text-[12px] text-ink-200 leading-relaxed">
+                          {idea.problem}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                          Publico-alvo
+                        </p>
+                        <p className="text-[12px] text-ink-200 leading-relaxed">
+                          {idea.targetAudience}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                      <div>
+                        <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                          Escopo MVP
+                        </p>
+                        <p className="text-[12px] text-ink-200 leading-relaxed font-[family-name:var(--font-mono)]">
+                          {idea.mvpScope}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-1">
+                          Stack sugerida
+                        </p>
+                        <p className="text-[12px] text-ink-200 leading-relaxed font-[family-name:var(--font-mono)]">
+                          {idea.suggestedStack}
+                        </p>
+                      </div>
+                    </div>
+                    {idea.trendSources.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[10px] font-mono text-ink-500 tracking-wider uppercase mb-2">
+                          Fontes de tendencia
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {idea.trendSources.map((src, si) => (
+                            <a
+                              key={si}
+                              href={src.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full bg-ink-950/60 border border-ink-800/40 text-ink-300 hover:text-amber-glow hover:border-amber-glow/30 transition-colors"
+                              title={src.title}
+                            >
+                              <span className="text-amber-glow/70">{src.platform}</span>
+                              <span className="text-ink-600">·</span>
+                              <span className="truncate max-w-[120px]">{src.title}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-ink-900/40 border border-ink-800/60 rounded-lg p-8 sm:p-12 text-center">
+          <p className="text-ink-600 font-mono text-sm">
+            Nenhuma ideia encontrada com esse filtro
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,10 +984,30 @@ function MetricsView({ runs }: { runs: ContentRun[] }) {
     }
   }
 
+  // Daily cost calculation
+  const uniqueDays = new Set(
+    withTokenUsage.map((r) =>
+      new Date(r.createdAt).toLocaleDateString("pt-BR")
+    )
+  );
+  const dailyCost =
+    uniqueDays.size > 0 ? totalCost / uniqueDays.size : 0;
+
+  // Preferred variants: count deliverables where chosen=true, grouped by variant
+  const variantChosenCounts: Record<string, number> = {};
+  for (const run of runs) {
+    if (!run.deliverables) continue;
+    for (const d of run.deliverables) {
+      if (d.chosen && d.variant) {
+        variantChosenCounts[d.variant] = (variantChosenCounts[d.variant] ?? 0) + 1;
+      }
+    }
+  }
+
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <MetricCard
           label="Total Runs"
           value={`${completed.length}`}
@@ -452,16 +1024,54 @@ function MetricsView({ runs }: { runs: ContentRun[] }) {
           accent="blue"
         />
         <MetricCard
+          label="Publicados"
+          value={`${runs.filter((r) => r.status === "published").length}`}
+          accent="green"
+        />
+      </div>
+
+      {/* Cost cards row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+        <MetricCard
           label="Custo OpenAI"
           value={totalCost > 0 ? `$${totalCost.toFixed(4)}` : "—"}
           accent="amber"
           subtitle={withTokenUsage.length > 0 ? `$${(totalCost / withTokenUsage.length).toFixed(4)}/run` : undefined}
         />
         <MetricCard
-          label="Publicados"
-          value={`${runs.filter((r) => r.status === "published").length}`}
-          accent="green"
+          label="Custo diario"
+          value={dailyCost > 0 ? `$${dailyCost.toFixed(4)}` : "—"}
+          accent="amber"
+          subtitle={uniqueDays.size > 0 ? `${uniqueDays.size} dias` : undefined}
         />
+        {/* Preferred variants card */}
+        <div className="bg-ink-900/40 border border-signal-purple/20 rounded-lg p-3 sm:p-4">
+          <p className="text-[10px] sm:text-[11px] font-mono text-ink-500 tracking-wider uppercase mb-1.5">
+            Variacoes preferidas
+          </p>
+          {Object.keys(variantChosenCounts).length > 0 ? (
+            <div className="space-y-1">
+              {VARIANT_ORDER.map((v) => {
+                const count = variantChosenCounts[v] ?? 0;
+                if (count === 0) return null;
+                return (
+                  <div key={v} className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-ink-400">
+                      {VARIANT_LABELS[v]}
+                    </span>
+                    <span className="text-sm font-[family-name:var(--font-display)] font-bold text-signal-purple">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="text-xl sm:text-2xl font-[family-name:var(--font-display)] font-bold text-signal-purple">
+              —
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Timing breakdown */}
@@ -785,6 +1395,16 @@ function RunCard({
                   <span className="text-[10px] font-mono text-ink-600">
                     {d.fileType}
                   </span>
+                  {d.variant && (
+                    <span className="text-[9px] font-mono text-signal-purple/70">
+                      {VARIANT_LABELS[d.variant] ?? d.variant}
+                    </span>
+                  )}
+                  {d.chosen && (
+                    <span className="text-[9px] font-mono text-signal-green">
+                      ● escolhida
+                    </span>
+                  )}
                   {d.filePath && (
                     <span className="text-[9px] font-mono text-ink-700 truncate ml-auto max-w-[200px]">
                       {d.filePath.split("/").slice(-2).join("/")}

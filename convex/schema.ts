@@ -101,6 +101,7 @@ export default defineSchema({
     sourcesImported: v.optional(v.number()),
     formats: v.array(v.string()),
     platforms: v.array(v.string()),
+    productIdeaId: v.optional(v.id("productIdeas")),
     notebookId: v.optional(v.string()),
     outputDir: v.optional(v.string()),
     timings: v.optional(
@@ -118,6 +119,12 @@ export default defineSchema({
       fileType: v.string(),
       content: v.optional(v.string()),
       filePath: v.optional(v.string()),
+      variant: v.optional(v.union(
+        v.literal("technical"),
+        v.literal("storytelling"),
+        v.literal("provocative")
+      )),
+      chosen: v.optional(v.boolean()),
     }))),
     tokenUsage: v.optional(v.object({
       promptTokens: v.number(),
@@ -131,4 +138,42 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_createdAt", ["createdAt"])
     .index("by_slug", ["slug"]),
+
+  productIdeas: defineTable({
+    date: v.number(),
+    name: v.string(),
+    problem: v.string(),
+    targetAudience: v.string(),
+    mvpScope: v.string(),
+    suggestedStack: v.string(),
+    trendSources: v.array(v.object({
+      platform: v.string(),
+      url: v.string(),
+      title: v.string(),
+    })),
+    contentRunId: v.optional(v.id("contentRuns")),
+    status: v.union(
+      v.literal("new"),
+      v.literal("building"),
+      v.literal("built"),
+      v.literal("skipped")
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_date", ["date"])
+    .index("by_status", ["status"]),
+
+  dailyBriefings: defineTable({
+    date: v.number(),
+    productIdeaId: v.optional(v.id("productIdeas")),
+    contentRunId: v.optional(v.id("contentRuns")),
+    telegramMessageId: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("sent"),
+      v.literal("failed")
+    ),
+  })
+    .index("by_date", ["date"]),
 });

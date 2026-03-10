@@ -47,11 +47,18 @@ export const updateStatus = mutation({
     ),
     tokensUsed: v.optional(v.number()),
     error: v.optional(v.string()),
+    productIdeaId: v.optional(v.id("productIdeas")),
     deliverables: v.optional(v.array(v.object({
       platform: v.string(),
       fileType: v.string(),
       content: v.optional(v.string()),
       filePath: v.optional(v.string()),
+      variant: v.optional(v.union(
+        v.literal("technical"),
+        v.literal("storytelling"),
+        v.literal("provocative")
+      )),
+      chosen: v.optional(v.boolean()),
     }))),
     tokenUsage: v.optional(v.object({
       promptTokens: v.number(),
@@ -113,5 +120,26 @@ export const findSimilar = query({
       }
       return matches / needleWords.size > 0.5;
     });
+  },
+});
+
+export const chooseVariant = mutation({
+  args: {
+    id: v.id("contentRuns"),
+    platform: v.string(),
+    variant: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.id);
+    if (!run || !run.deliverables) return;
+    const updated = run.deliverables.map((d) => ({
+      ...d,
+      chosen: d.platform === args.platform && d.variant === args.variant
+        ? true
+        : d.platform === args.platform
+          ? false
+          : d.chosen,
+    }));
+    await ctx.db.patch(args.id, { deliverables: updated });
   },
 });

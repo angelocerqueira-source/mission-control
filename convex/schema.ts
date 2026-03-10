@@ -84,4 +84,51 @@ export default defineSchema({
   })
     .index("by_undelivered", ["delivered", "createdAt"])
     .index("by_agent", ["mentionedAgentId"]),
+
+  contentRuns: defineTable({
+    tema: v.string(),
+    slug: v.string(),
+    status: v.union(
+      v.literal("researching"),
+      v.literal("generating"),
+      v.literal("adapting"),
+      v.literal("review"),
+      v.literal("published"),
+      v.literal("failed")
+    ),
+    mode: v.union(v.literal("fast"), v.literal("deep")),
+    sourcesFound: v.optional(v.number()),
+    sourcesImported: v.optional(v.number()),
+    formats: v.array(v.string()),
+    platforms: v.array(v.string()),
+    notebookId: v.optional(v.string()),
+    outputDir: v.optional(v.string()),
+    timings: v.optional(
+      v.object({
+        researchMs: v.optional(v.number()),
+        generateMs: v.optional(v.number()),
+        adaptMs: v.optional(v.number()),
+        totalMs: v.optional(v.number()),
+      })
+    ),
+    tokensUsed: v.optional(v.number()),
+    error: v.optional(v.string()),
+    deliverables: v.optional(v.array(v.object({
+      platform: v.string(),
+      fileType: v.string(),
+      content: v.optional(v.string()),
+      filePath: v.optional(v.string()),
+    }))),
+    tokenUsage: v.optional(v.object({
+      promptTokens: v.number(),
+      completionTokens: v.number(),
+      totalTokens: v.number(),
+      costUsd: v.number(),
+    })),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_slug", ["slug"]),
 });

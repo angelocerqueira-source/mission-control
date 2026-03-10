@@ -122,3 +122,24 @@ export const findSimilar = query({
     });
   },
 });
+
+export const chooseVariant = mutation({
+  args: {
+    id: v.id("contentRuns"),
+    platform: v.string(),
+    variant: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.id);
+    if (!run || !run.deliverables) return;
+    const updated = run.deliverables.map((d) => ({
+      ...d,
+      chosen: d.platform === args.platform && d.variant === args.variant
+        ? true
+        : d.platform === args.platform
+          ? false
+          : d.chosen,
+    }));
+    await ctx.db.patch(args.id, { deliverables: updated });
+  },
+});
